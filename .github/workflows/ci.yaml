@@ -48,7 +48,7 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.IMAGE_NAME }}
-          tags: ${{ github.sha }}
+          tags: ${{ matrix.version }}
 
       - name: Build and Push to GitHub Packages
         uses: docker/build-push-action@v3
