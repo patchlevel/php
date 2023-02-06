@@ -19,13 +19,8 @@ jobs:
 
     strategy:
       matrix:
-        include:
-          - version: "8.0"
-            extensions: ''
-          - version: "8.1"
-            extensions: ''
-          - version: "8.2"
-            extensions: ''
+        version: [ '8.0', '8.1', '8.2' ]
+        extensions: [ 'pcntl xdebug' ]
 
     runs-on: ubuntu-latest
 
