@@ -63,6 +63,6 @@ jobs:
             type=gha,scope=release-cache
           cache-to: type=gha,mode=max,scope=release-cache
           push: ${{ github.ref_name == 'main' }}
-          build-args:
-            - "VERSION=${{ matrix.version }}"
-            - "EXTENSIONS=${{ matrix.extensions }}"
+          build-args: |
+            VERSION=${{ matrix.version }}
+            EXTENSIONS=${{ matrix.extensions }}
