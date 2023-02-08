@@ -20,7 +20,7 @@ jobs:
     strategy:
       matrix:
         version: [ '8.0', '8.1', '8.2' ]
-        extensions: [ 'pcntl xdebug zip unzip' ]
+        extensions: [ 'pcntl xdebug zip' ]
 
     runs-on: ubuntu-latest
 
