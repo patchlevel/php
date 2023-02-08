@@ -1,6 +1,7 @@
 ARG VERSION
-ARG EXTENSIONS
 FROM php:$VERSION
+
+ARG EXTENSIONS
 
 COPY --from=composer /usr/bin/composer /usr/bin/composer
 
