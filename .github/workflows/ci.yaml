@@ -21,6 +21,9 @@ jobs:
       matrix:
         version: [ '8.0', '8.1', '8.2', '8.3' ]
         extensions: [ 'pcntl xdebug zip intl bcmath rdkafka pdo_pgsql pdo_mysql gd' ]
+        include:
+          - version: "8.4"
+            extensions: "pcntl zip intl bcmath pdo_pgsql pdo_mysql"
 
     runs-on: ubuntu-latest
 
