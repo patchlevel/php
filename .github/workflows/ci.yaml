@@ -8,6 +8,8 @@ on:
     branches:
       - "main"
       - "renovate/*"
+  schedule:
+    - cron: "0 0 * * 0"
 
 env:
   REGISTRY: ghcr.io
