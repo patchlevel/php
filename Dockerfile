@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     zip \
     unzip \
     curl \
+    tini \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer /usr/bin/composer /usr/bin/composer
@@ -16,3 +17,7 @@ ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/do
 
 RUN chmod +x /usr/local/bin/install-php-extensions && \
     install-php-extensions $EXTENSIONS
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+CMD ["php", "-a"]
