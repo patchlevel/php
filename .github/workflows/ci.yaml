@@ -22,7 +22,7 @@ jobs:
     strategy:
       matrix:
         platform: [ 'linux/amd64', 'linux/arm64' ]
-        version: [ '8.1', '8.2', '8.3', '8.4', '8.5' ]
+        version: [ '8.1', '8.2', '8.3', '8.4', '8.5-rc' ]
         extensions: [ 'pcntl xdebug zip intl bcmath rdkafka pdo_pgsql pdo_mysql gd opentelemetry' ]
 
     runs-on: ${{ startsWith(matrix.platform, 'linux/arm') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
