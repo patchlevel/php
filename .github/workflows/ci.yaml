@@ -69,8 +69,10 @@ jobs:
           platforms: ${{ matrix.platform.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: |
-            type=gha,scope=ci-cache
-          cache-to: type=gha,mode=max,scope=ci-cache
+            type=gha,scope=ci-${{ matrix.version }}-${{ matrix.platform.id }}
+            type=gha,scope=release-${{ matrix.version }}-${{ matrix.platform.id }}
+          cache-to: |
+            type=gha,mode=max,scope=ci-${{ matrix.version }}-${{ matrix.platform.id }}
           push: false
           build-args: |
             VERSION=${{ matrix.version }}
@@ -85,9 +87,10 @@ jobs:
           platforms: ${{ matrix.platform.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: |
-            type=gha,scope=ci-cache
-            type=gha,scope=release-cache
-          cache-to: type=gha,mode=max,scope=release-cache
+            type=gha,scope=ci-${{ matrix.version }}-${{ matrix.platform.id }}
+            type=gha,scope=release-${{ matrix.version }}-${{ matrix.platform.id }}
+          cache-to: |
+            type=gha,mode=max,scope=release-${{ matrix.version }}-${{ matrix.platform.id }}
           outputs: |
             type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
