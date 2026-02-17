@@ -1,6 +1,6 @@
 # https://help.github.com/en/categories/automating-your-workflow-with-github-actions
 
-name: "Continues Integration"
+name: "Continuous Integration"
 
 on:
   pull_request:
@@ -15,22 +15,112 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/${{ github.repository }}
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build:
-    name: Build Docker image
-
+    name: Build per-arch (push by digest on main)
     strategy:
+      fail-fast: false
       matrix:
-        platform: [ 'linux/amd64', 'linux/arm64' ]
-        version: [ '8.1', '8.2', '8.3', '8.4', '8.5' ]
-        extensions: [ 'pcntl xdebug zip intl bcmath rdkafka pdo_pgsql pdo_mysql gd opentelemetry mongodb' ]
+        platform:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            id: linux-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            id: linux-arm64
+        version: [ "8.1", "8.2", "8.3", "8.4", "8.5" ]
+        extensions:
+          - "pcntl xdebug zip intl bcmath rdkafka pdo_pgsql pdo_mysql gd opentelemetry mongodb"
 
-    runs-on: ${{ startsWith(matrix.platform, 'linux/arm') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.platform.runner }}
 
     steps:
       - name: Check out the repo
         uses: actions/checkout@v6
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        if: ${{ github.ref_name == 'main' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ matrix.version }}
+
+      - name: Build (no push)
+        if: ${{ github.ref_name != 'main' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=ci-cache
+          cache-to: type=gha,mode=max,scope=ci-cache
+          push: false
+          build-args: |
+            VERSION=${{ matrix.version }}
+            EXTENSIONS=${{ matrix.extensions }}
+
+      - name: Build and push (main only)
+        id: build_push
+        if: ${{ github.ref_name == 'main' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=ci-cache
+            type=gha,scope=release-cache
+          cache-to: type=gha,mode=max,scope=release-cache
+          outputs: |
+            type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            VERSION=${{ matrix.version }}
+            EXTENSIONS=${{ matrix.extensions }}
+
+      - name: Store digest (main only)
+        if: ${{ github.ref_name == 'main' }}
+        run: |
+          mkdir -p /tmp/digests
+          echo "${{ steps.build_push.outputs.digest }}" > "/tmp/digests/${{ matrix.version }}-${{ matrix.platform.id }}.txt"
+
+      - name: Upload digests (main only)
+        if: ${{ github.ref_name == 'main' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.version }}-${{ matrix.platform.id }}
+          path: /tmp/digests/${{ matrix.version }}-${{ matrix.platform.id }}.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Create multi-arch manifest (main only)
+    if: ${{ github.ref_name == 'main' }}
+    needs: build
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [ "8.1", "8.2", "8.3", "8.4", "8.5" ]
+
+    steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -41,23 +131,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Download digests (amd64)
+        uses: actions/download-artifact@v4
         with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: ${{ matrix.version }}
+          name: digests-${{ matrix.version }}-linux-amd64
+          path: /tmp/digests
 
-      - name: Build and Push to GitHub Packages
-        uses: docker/build-push-action@v6
+      - name: Download digests (arm64)
+        uses: actions/download-artifact@v4
         with:
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: |
-            type=gha,scope=ci-cache
-            type=gha,scope=release-cache
-          cache-to: type=gha,mode=max,scope=release-cache
-          push: ${{ github.ref_name == 'main' }}
-          build-args: |
-            VERSION=${{ matrix.version }}
-            EXTENSIONS=${{ matrix.extensions }}
+          name: digests-${{ matrix.version }}-linux-arm64
+          path: /tmp/digests
+
+      - name: Create and push manifest list tag
+        run: |
+          set -euo pipefail
+
+          AMD_DIGEST="$(cat /tmp/digests/${{ matrix.version }}-linux-amd64.txt)"
+          ARM_DIGEST="$(cat /tmp/digests/${{ matrix.version }}-linux-arm64.txt)"
+
+          # Create a multi-arch manifest for :<version> that points to both per-arch digests
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE_NAME }}:${{ matrix.version }}" \
+            "${{ env.IMAGE_NAME }}@${AMD_DIGEST}" \
+            "${{ env.IMAGE_NAME }}@${ARM_DIGEST}"
+
+      - name: Inspect manifest (debug)
+        run: |
+          docker buildx imagetools inspect "${{ env.IMAGE_NAME }}:${{ matrix.version }}"
