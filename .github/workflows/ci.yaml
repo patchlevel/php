@@ -135,13 +135,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download digests (amd64)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: digests-${{ matrix.version }}-linux-amd64
           path: /tmp/digests
 
       - name: Download digests (arm64)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: digests-${{ matrix.version }}-linux-arm64
           path: /tmp/digests
