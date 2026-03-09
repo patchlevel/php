@@ -63,7 +63,7 @@ jobs:
 
       - name: Build (no push)
         if: ${{ github.ref_name != 'main' }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform.platform }}
@@ -81,7 +81,7 @@ jobs:
       - name: Build and push (main only)
         id: build_push
         if: ${{ github.ref_name == 'main' }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform.platform }}
