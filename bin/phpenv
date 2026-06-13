@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve the directory of this script, following symlinks, so PHPENV_ROOT
+# always points at the cloned repository regardless of how phpenv was called.
+resolve_root() {
+  local src="${BASH_SOURCE[0]}"
+  while [ -h "$src" ]; do
+    local dir
+    dir="$(cd -P "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [[ $src != /* ]] && src="$dir/$src"
+  done
+  cd -P "$(dirname "$src")/.." && pwd
+}
+
+PHPENV_ROOT="$(resolve_root)"
+SHIM_DIR="$PHPENV_ROOT/shims"
+
+# Configuration (overridable via environment).
+PHPENV_IMAGE="${PHPENV_IMAGE:-ghcr.io/patchlevel/php}"
+PHPENV_VERSIONS=(8.1 8.2 8.3 8.4 8.5)
+
+BEGIN_MARK="# >>> phpenv >>>"
+END_MARK="# <<< phpenv <<<"
+
+# --- helpers ---------------------------------------------------------------
+
+shim_name() {
+  # 8.5 -> php85
+  echo "php${1//./}"
+}
+
+profile_file() {
+  case "$(basename "${SHELL:-}")" in
+    zsh)  echo "$HOME/.zshrc" ;;
+    bash) if [ -f "$HOME/.bashrc" ]; then echo "$HOME/.bashrc"; else echo "$HOME/.bash_profile"; fi ;;
+    *)    echo "$HOME/.profile" ;;
+  esac
+}
+
+remove_block() {
+  local rc="$1"
+  [ -f "$rc" ] || return 0
+  awk -v b="$BEGIN_MARK" -v e="$END_MARK" '
+    $0==b {skip=1; next}
+    $0==e {skip=0; next}
+    !skip {print}
+  ' "$rc" > "$rc.phpenv.tmp" && mv "$rc.phpenv.tmp" "$rc"
+}
+
+generate_shims() {
+  mkdir -p "$SHIM_DIR"
+  local v name file
+  for v in "${PHPENV_VERSIONS[@]}"; do
+    name="$(shim_name "$v")"
+    file="$SHIM_DIR/$name"
+    cat > "$file" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE="$PHPENV_IMAGE:$v"
+
+# Only allocate an interactive TTY when we actually have one. This keeps the
+# command usable in pipes and CI (e.g. \`echo '<?php ...' | $name\`).
+flags=(--rm)
+if [ -t 0 ] && [ -t 1 ]; then
+  flags+=(-it)
+fi
+
+# Smart dispatch:
+#   - no arguments        -> the image default (php -a, an interactive REPL)
+#   - first arg is a flag -> run php with it ($name -v  -> php -v)
+#   - first arg is a word -> run it as a command ($name composer install, $name bash)
+if [ "\$#" -gt 0 ] && [ "\${1#-}" != "\$1" ]; then
+  set -- php "\$@"
+fi
+
+exec docker run "\${flags[@]}" --volume "\$PWD:/app" -w /app "\$IMAGE" "\$@"
+EOF
+    chmod +x "$file"
+  done
+}
+
+add_path() {
+  local rc
+  rc="$(profile_file)"
+  remove_block "$rc"
+  {
+    echo "$BEGIN_MARK"
+    echo "export PATH=\"$SHIM_DIR:$PHPENV_ROOT/bin:\$PATH\""
+    echo "$END_MARK"
+  } >> "$rc"
+  echo "$rc"
+}
+
+# --- commands --------------------------------------------------------------
+
+cmd_install() {
+  generate_shims
+  local rc
+  rc="$(add_path)"
+  echo "phpenv installed."
+  echo
+  echo "  Repository : $PHPENV_ROOT"
+  echo "  Shims      : $SHIM_DIR"
+  echo "  PATH added : $rc"
+  echo
+  echo "Available commands: $(for v in "${PHPENV_VERSIONS[@]}"; do printf '%s ' "$(shim_name "$v")"; done)"
+  echo
+  echo "Restart your shell or run:  source \"$rc\""
+  echo "Then pull the images with:  phpenv pull"
+}
+
+cmd_update() {
+  if [ -d "$PHPENV_ROOT/.git" ]; then
+    echo "Updating repository ..."
+    git -C "$PHPENV_ROOT" pull --ff-only
+  fi
+  generate_shims
+  cmd_pull
+  echo "phpenv updated."
+}
+
+cmd_pull() {
+  local v
+  for v in "${PHPENV_VERSIONS[@]}"; do
+    echo "Pulling $PHPENV_IMAGE:$v ..."
+    docker pull "$PHPENV_IMAGE:$v"
+  done
+}
+
+cmd_uninstall() {
+  rm -rf "$SHIM_DIR"
+  local rc
+  rc="$(profile_file)"
+  remove_block "$rc"
+  echo "Removed shims and PATH entry from $rc."
+  echo "The repository at $PHPENV_ROOT was kept."
+  echo "Remove it too with:  rm -rf \"$PHPENV_ROOT\""
+}
+
+cmd_list() {
+  local v
+  for v in "${PHPENV_VERSIONS[@]}"; do
+    printf '  %-6s ->  %s:%s\n' "$(shim_name "$v")" "$PHPENV_IMAGE" "$v"
+  done
+}
+
+cmd_help() {
+  cat <<EOF
+phpenv - manage the patchlevel PHP docker images
+
+Usage: phpenv <command>
+
+Commands:
+  install     Generate the php* shims and add them to your PATH
+  update      Pull the latest repo changes, regenerate shims and pull images
+  pull        Pull all PHP docker images
+  list        List the available PHP versions and their commands
+  uninstall   Remove the shims and the PATH entry
+  help        Show this help
+
+After installing, use the generated commands directly, e.g.:
+  php85 -v
+  php84 vendor/bin/phpunit
+  echo '<?php echo PHP_VERSION;' | php85
+EOF
+}
+
+# --- dispatch --------------------------------------------------------------
+
+case "${1:-help}" in
+  install)            cmd_install ;;
+  update)             cmd_update ;;
+  pull)               cmd_pull ;;
+  list|versions)      cmd_list ;;
+  uninstall|remove)   cmd_uninstall ;;
+  help|-h|--help)     cmd_help ;;
+  *)
+    echo "Unknown command: $1" >&2
+    echo >&2
+    cmd_help >&2
+    exit 1
+    ;;
+esac
