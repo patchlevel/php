@@ -19,6 +19,10 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: ${{ github.workflow_ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build per-arch (push by digest on main)
