@@ -116,7 +116,7 @@ jobs:
     name: Create multi-arch manifest (main only)
     if: ${{ github.ref_name == 'main' }}
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     strategy:
       fail-fast: false
